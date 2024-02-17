@@ -38,7 +38,8 @@ SELECT DISTINCT(npi), p2.nppes_provider_first_name, p2.nppes_provider_last_org_n
 FROM prescription AS p1
 INNER JOIN prescriber AS p2 USING (NPI)
 GROUP BY npi,p2.nppes_provider_first_name, p2.nppes_provider_last_org_name, p2.specialty_description
-ORDER BY total_claims DESC;
+ORDER BY total_claims DESC
+LIMIT 1;
 
 -- Answer: Bruce Pendley, Family Practce with total claims 99707
 
@@ -75,55 +76,121 @@ LEFT JOIN prescription AS p1
 USING (npi)
 GROUP BY p2.specialty_description
 HAVING SUM(p1.total_claim_count)IS null
-ORDER BY total_claims;
+ORDER BY p2.specialty_description;
+
+-- ANSWER: yes, 15
 
 -- 2d. **Difficult Bonus:** *Do not attempt until you have solved all other problems!* For each specialty, report the percentage of total claims by that specialty which are for opioids. Which specialties have a high percentage of opioids?
 
-SELECT prescriber.specialty_description, SUM(prescription.total_claim_count)
-	 FROM prescription
-	 INNER JOIN drug
-	 USING (drug_name)
-	 INNER JOIN prescriber
-	 USING (npi)
-	 WHERE drug.opioid_drug_flag ILIKE '%Y%' 
-	 GROUP BY prescriber.specialty_description; --returns sum total of prescriptions by specialty where the drug is a opioid
-	 
-SELECT prescriber.specialty_description, 
-	 (SELECT (SUM(prescription.total_claim_count)
-	  FROM prescription
-	  INNER JOIN drug
-	 USING (drug_name)
-	 INNER JOIN prescriber
-	 USING (npi)
-	 WHERE drug.opioid_drug_flag ILIKE '%Y%')/SUM(prescription.total_claim_count))*100	AS pct_opioid  
-FROM prescription
+-- **************************CORRECT ANSWER BELOW for 2D***************
+
+WITH claims AS
+	(SELECT
+		pr.specialty_description,
+		SUM(rx.total_claim_count) AS total_claims
+	FROM prescriber AS pr
+	INNER JOIN prescription AS rx
+	USING(npi)
+	INNER JOIN drug
+	USING (drug_name)
+	GROUP BY pr.specialty_description),
+-- second CTE for total opioid claims
+opioid AS
+	(SELECT
+		pr.specialty_description,
+		SUM(rx.total_claim_count) AS total_opioid
+	FROM prescriber AS pr
+	INNER JOIN prescription AS rx
+	USING(npi)
+	INNER JOIN drug
+	USING (drug_name)
+	WHERE drug.opioid_drug_flag ='Y'
+	GROUP BY pr.specialty_description)
+--main query
+SELECT
+	claims.specialty_description,
+	COALESCE(ROUND((opioid.total_opioid / claims.total_claims * 100),2),0) AS perc_opioid
+FROM claims
+LEFT JOIN opioid
+USING(specialty_description)
+ORDER BY perc_opioid;
+
+-- ANSWER: Case Manager with 72%
+
+--ALTERNATE FOR 2D--
+SELECT
+	specialty_description,
+	SUM(
+		CASE WHEN opioid_drug_flag = 'Y' THEN total_claim_count
+		ELSE 0
+	END
+	) as opioid_claims,
+	
+	SUM(total_claim_count) AS total_claims,
+	
+	SUM(
+		CASE WHEN opioid_drug_flag = 'Y' THEN total_claim_count
+		ELSE 0
+	END
+	) * 100.0 /  SUM(total_claim_count) AS opioid_percentage
+FROM prescriber
+INNER JOIN prescription
+USING(npi)
 INNER JOIN drug
-USING (drug_name)
-INNER JOIN prescriber
-USING (npi)
-WHERE drug.opioid_drug_flag ILIKE '%Y%' 
-GROUP BY prescriber.specialty_description;
+USING(drug_name)
+GROUP BY specialty_description
+--order by specialty_description;
+order by opioid_percentage desc
+
+--2D FAILED ATTEMPTS BELOW-- NO CTE KNOWLEDGE YET--
+
+
+-- SELECT prescriber.specialty_description, SUM(prescription.total_claim_count)
+-- 	 FROM prescription
+-- 	 INNER JOIN drug
+-- 	 USING (drug_name)
+-- 	 INNER JOIN prescriber
+-- 	 USING (npi)
+-- 	 WHERE drug.opioid_drug_flag ILIKE '%Y%' 
+-- 	 GROUP BY prescriber.specialty_description; --returns sum total of prescriptions by specialty where the drug is a opioid
+	 
+-- SELECT prescriber.specialty_description, 
+-- 	 (SELECT (SUM(prescription.total_claim_count)
+-- 	  FROM prescription
+-- 	  INNER JOIN drug
+-- 	 USING (drug_name)
+-- 	 INNER JOIN prescriber
+-- 	 USING (npi)
+-- 	 WHERE drug.opioid_drug_flag ILIKE '%Y%')/SUM(prescription.total_claim_count))*100	AS pct_opioid  
+-- FROM prescription
+-- INNER JOIN drug
+-- USING (drug_name)
+-- INNER JOIN prescriber
+-- USING (npi)
+-- WHERE drug.opioid_drug_flag ILIKE '%Y%' 
+-- GROUP BY prescriber.specialty_description;
 	
 
-SELECT DISTINCT p2.specialty_description,
--- SUM(p1.total_claim_count) AS total_claims,
-	(SELECT SUM(prescription.total_claim_count)
-	 FROM prescription
-	 INNER JOIN drug
-	 USING (drug_name)
-	 INNER JOIN prescriber
-	 USING (npi)
-	 WHERE drug.opioid_drug_flag ILIKE '%Y%' 
-	 GROUP BY prescriber.specialty_description) AS opioid_claims
-FROM prescriber AS p2
-INNER JOIN prescription AS p1
-USING (npi)
-INNER JOIN drug AS d
-ON p1.drug_name = d.drug_name
-WHERE p2.npi = p1.npi 
-	AND d.opioid_drug_flag ILIKE '%Y%'
-GROUP BY p2.specialty_description
--- ORDER BY opioid_claims DESC;
+-- SELECT DISTINCT p2.specialty_description,
+-- -- SUM(p1.total_claim_count) AS total_claims,
+-- 	(SELECT SUM(prescription.total_claim_count)
+-- 	 FROM prescription
+-- 	 INNER JOIN drug
+-- 	 USING (drug_name)
+-- 	 INNER JOIN prescriber
+-- 	 USING (npi)
+-- 	 WHERE drug.opioid_drug_flag ILIKE '%Y%' 
+-- 	 GROUP BY prescriber.specialty_description) AS opioid_claims
+-- FROM prescriber AS p2
+-- INNER JOIN prescription AS p1
+-- USING (npi)
+-- INNER JOIN drug AS d
+-- ON p1.drug_name = d.drug_name
+-- WHERE p2.npi = p1.npi 
+-- 	AND d.opioid_drug_flag ILIKE '%Y%'
+-- GROUP BY p2.specialty_description
+-- -- ORDER BY opioid_claims DESC;
+
 
 
 
@@ -135,7 +202,8 @@ FROM drug AS d
 INNER JOIN prescription AS p1
 USING (drug_name)
 GROUP BY d.generic_name
-ORDER BY total_cost DESC;
+ORDER BY total_cost DESC
+LIMIT 1;
 
 -- Answer: Insulin with total cost of 104264066.35
 
@@ -147,7 +215,8 @@ FROM drug AS d
 INNER JOIN prescription AS p1
 USING (drug_name)
 GROUP BY d.generic_name
-ORDER BY cost_per_day DESC;
+ORDER BY cost_per_day DESC
+LIMIT 1;
 
 -- Answer: "C1 ESTERASE INHIBITOR"	3495.22
 
@@ -168,12 +237,12 @@ FROM drug;
 -- 4b. Building off of the query you wrote for part a, determine whether more was spent (total_drug_cost) on opioids or on antibiotics. Hint: Format the total costs as MONEY for easier comparision.
 
 SELECT SUM(MONEY(p1.total_drug_cost)) AS total_cost,
-CASE 
-WHEN opioid_drug_flag = 'Y'
-THEN 'opioid'
-WHEN antibiotic_drug_flag ='Y'
-THEN 'antibiotic'
-ELSE 'neither' END AS drug_type
+	CASE 
+	WHEN opioid_drug_flag = 'Y'
+	THEN 'opioid'
+	WHEN antibiotic_drug_flag ='Y'
+	THEN 'antibiotic'
+	ELSE 'neither' END AS drug_type
 FROM drug
 INNER JOIN prescription AS p1
 USING (drug_name)
@@ -184,26 +253,28 @@ ORDER BY total_cost DESC;
 
 -- 5a. How many CBSAs are in Tennessee? **Warning:** The cbsa table contains information for all states, not just Tennessee.
 
-
 SELECT COUNT(*)
 FROM cbsa
-WHERE cbsaname LIKE '%TN%';
+INNER JOIN fips_county
+USING (fipscounty)
+WHERE fips_county.state LIKE 'TN';
 
--- Answer: 56
+-- Answer: 42
 
 
 --5b. Which cbsa has the largest combined population? Which has the smallest? Report the CBSA name and total population.
 
 
 
-SELECT c1.cbsaname, c1.cbsa, SUM(p1.population) AS top_pop
+SELECT c1.cbsaname, SUM(p1.population) AS top_pop
 FROM CBSA AS c1
 INNER JOIN population AS p1
 USING (fipscounty)
-GROUP BY c1.cbsaname,  c1.cbsa
-ORDER BY top_pop DESC;
+GROUP BY c1.cbsaname
+ORDER BY top_pop DESC
+LIMIT 1;
 
--- Answer: Nashville-Davidson, TN population of 1830410 is the largest. Morristown, TN population is 63465.
+-- Answer: Nashville-Davidson-Murfreesboro-Franklin, TN population of 1830410 is the largest. Morristown, TN population is 63465.
 
 --  5c. What is the largest (in terms of population) county which is not included in a CBSA? Report the county name and population.
 
@@ -245,7 +316,7 @@ ORDER BY total_claim_count DESC;
 
 -- 6c. Add another column to you answer from the previous part which gives the prescriber first and last name associated with each row.
 
-SELECT drug_name, total_claim_count, p.nppes_provider_first_name, p.nppes_provider_last_org_name,
+SELECT drug_name, total_claim_count, CONCAT(p.nppes_provider_first_name, ' ', p.nppes_provider_last_org_name),
 	CASE 
 	WHEN d.opioid_drug_flag = 'Y'
 	THEN 'Y'
@@ -292,6 +363,18 @@ WHERE  prescriber.specialty_description ilike 'pain management'
 Group BY  drug.drug_name, prescriber.npi
 ORDER BY prescriber.npi DESC;
 
+-- ALTERNATE METHOD
+
+SELECT drug.drug_name, prescriber.npi, prescription.total_claim_count
+FROM prescriber
+CROSS JOIN drug
+LEFT JOIN prescription
+USING (npi, drug_name)
+WHERE  prescriber.specialty_description ilike 'pain management'
+	AND prescriber.nppes_provider_city ilike 'Nashville'
+	AND drug.opioid_drug_flag ='Y'
+ORDER BY prescriber.npi DESC;
+
 -- 7c. Finally, if you have not done so already, fill in any missing values for total_claim_count with 0. Hint - Google the COALESCE function.
 
 
@@ -308,6 +391,19 @@ WHERE  prescriber.specialty_description ilike 'pain management'
 	AND prescriber.nppes_provider_city ilike 'Nashville'
 	AND drug.opioid_drug_flag ='Y'
 Group BY  drug.drug_name, prescriber.npi
+ORDER BY prescriber.npi DESC;
+
+
+--ALTERNATE METHOD--
+SELECT drug.drug_name, prescriber.npi, COALESCE(SUM(prescription.total_claim_count),0)
+FROM prescriber
+CROSS JOIN drug
+LEFT JOIN prescription
+USING (npi, drug_name)
+WHERE  prescriber.specialty_description ilike 'pain management'
+	AND prescriber.nppes_provider_city ilike 'Nashville'
+	AND drug.opioid_drug_flag ='Y'
+GROUP BY drug.drug_name, prescriber.npi
 ORDER BY prescriber.npi DESC;
 
 	
