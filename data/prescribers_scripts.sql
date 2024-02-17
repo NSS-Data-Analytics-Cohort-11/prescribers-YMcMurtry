@@ -71,14 +71,60 @@ ORDER BY total_claims DESC;
 
 SELECT p2.specialty_description, SUM(p1.total_claim_count) AS total_claims
 FROM prescriber AS p2
+LEFT JOIN prescription AS p1
+USING (npi)
+GROUP BY p2.specialty_description
+HAVING SUM(p1.total_claim_count)IS null
+ORDER BY total_claims;
+
+-- 2d. **Difficult Bonus:** *Do not attempt until you have solved all other problems!* For each specialty, report the percentage of total claims by that specialty which are for opioids. Which specialties have a high percentage of opioids?
+
+SELECT prescriber.specialty_description, SUM(prescription.total_claim_count)
+	 FROM prescription
+	 INNER JOIN drug
+	 USING (drug_name)
+	 INNER JOIN prescriber
+	 USING (npi)
+	 WHERE drug.opioid_drug_flag ILIKE '%Y%' 
+	 GROUP BY prescriber.specialty_description; --returns sum total of prescriptions by specialty where the drug is a opioid
+	 
+SELECT prescriber.specialty_description, 
+	 (SELECT (SUM(prescription.total_claim_count)
+	  FROM prescription
+	  INNER JOIN drug
+	 USING (drug_name)
+	 INNER JOIN prescriber
+	 USING (npi)
+	 WHERE drug.opioid_drug_flag ILIKE '%Y%')/SUM(prescription.total_claim_count))*100	AS pct_opioid  
+FROM prescription
+INNER JOIN drug
+USING (drug_name)
+INNER JOIN prescriber
+USING (npi)
+WHERE drug.opioid_drug_flag ILIKE '%Y%' 
+GROUP BY prescriber.specialty_description;
+	
+
+SELECT DISTINCT p2.specialty_description,
+-- SUM(p1.total_claim_count) AS total_claims,
+	(SELECT SUM(prescription.total_claim_count)
+	 FROM prescription
+	 INNER JOIN drug
+	 USING (drug_name)
+	 INNER JOIN prescriber
+	 USING (npi)
+	 WHERE drug.opioid_drug_flag ILIKE '%Y%' 
+	 GROUP BY prescriber.specialty_description) AS opioid_claims
+FROM prescriber AS p2
 INNER JOIN prescription AS p1
 USING (npi)
 INNER JOIN drug AS d
 ON p1.drug_name = d.drug_name
+WHERE p2.npi = p1.npi 
+	AND d.opioid_drug_flag ILIKE '%Y%'
 GROUP BY p2.specialty_description
-ORDER BY total_claims;
+-- ORDER BY opioid_claims DESC;
 
--- 2d. **Difficult Bonus:** *Do not attempt until you have solved all other problems!* For each specialty, report the percentage of total claims by that specialty which are for opioids. Which specialties have a high percentage of opioids?
 
 
 -- 3a. Which drug (generic_name) had the highest total drug cost?
@@ -231,7 +277,7 @@ WHERE  p1.specialty_description ilike 'pain management'
 -- 7b. Next, report the number of claims per drug per prescriber. Be sure to include all combinations, whether or not the prescriber had any claims. You should report the npi, the drug name, and the number of claims (total_claim_count).
 
 
-SELECT drug.drug_name, prescriber.npi, 
+SELECT drug.drug_name, prescriber.npi,
 	(SELECT SUM(prescription.total_claim_count)
 	 FROM prescription
 	 WHERE prescriber.npi = prescription.npi
@@ -245,4 +291,23 @@ WHERE  prescriber.specialty_description ilike 'pain management'
 	AND drug.opioid_drug_flag ='Y'
 Group BY  drug.drug_name, prescriber.npi
 ORDER BY prescriber.npi DESC;
+
+-- 7c. Finally, if you have not done so already, fill in any missing values for total_claim_count with 0. Hint - Google the COALESCE function.
+
+
+SELECT drug.drug_name, prescriber.npi, 
+	(SELECT(COALESCE(SUM(prescription.total_claim_count),0))	
+	 FROM prescription
+	 WHERE prescriber.npi = prescription.npi
+	 AND prescription.drug_name = drug.drug_name) AS total_claim
+FROM prescriber
+CROSS JOIN drug
+INNER JOIN prescription
+USING (npi)
+WHERE  prescriber.specialty_description ilike 'pain management'
+	AND prescriber.nppes_provider_city ilike 'Nashville'
+	AND drug.opioid_drug_flag ='Y'
+Group BY  drug.drug_name, prescriber.npi
+ORDER BY prescriber.npi DESC;
+
 	
